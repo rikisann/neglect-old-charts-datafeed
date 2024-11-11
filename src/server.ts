@@ -10,7 +10,7 @@ const app = express();
 const port = 3001;
 const server = createServer(app);
 
-app.use("/", (req, res) => {
+app.use("/hello", (req, res) => {
   res.send("Hello World");
 });
 app.use(cors({ origin: "*" }));
