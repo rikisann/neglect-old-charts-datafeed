@@ -10,6 +10,9 @@ const app = express();
 const port = 3001;
 const server = createServer(app);
 
+app.use("/", (req, res) => {
+  res.send("Hello World");
+});
 app.use(cors({ origin: "*" }));
 app.use("/history", historyRouter);
 
