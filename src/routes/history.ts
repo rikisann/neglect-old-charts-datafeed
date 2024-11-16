@@ -8,7 +8,18 @@ router.get("/", async (req, res) => {
   const address = req.query.address as string;
   const from = parseInt(req.query.from as string, 10);
   const to = parseInt(req.query.to as string, 10);
-  const resolution = parseInt(req.query.resolution as string, 10);
+  const resolutionParam = req.query.resolution as string;
+
+  let resolutionMs: number;
+  if (resolutionParam.endsWith("S") || resolutionParam.endsWith("s")) {
+    // Resolution is in seconds
+    const seconds = parseInt(resolutionParam.slice(0, -1), 10);
+    resolutionMs = seconds * 1000;
+  } else {
+    // Resolution is in minutes
+    const minutes = parseInt(resolutionParam, 10);
+    resolutionMs = minutes * 60 * 1000;
+  }
 
   const transactionsData = await redis.zrangebyscore(
     `transactions:${address}`,
@@ -29,9 +40,7 @@ router.get("/", async (req, res) => {
 
       const price = transaction.totalUsd / tokenAmount;
       const time = new Date(transaction.timestamp * 1000);
-      const bucket =
-        Math.floor(time.getTime() / (resolution * 60 * 1000)) *
-        (resolution * 60 * 1000);
+      const bucket = Math.floor(time.getTime() / resolutionMs) * resolutionMs;
 
       if (!barsMap[bucket]) {
         barsMap[bucket] = {
