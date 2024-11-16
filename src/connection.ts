@@ -13,6 +13,11 @@ export const redis = new Redis({
   },
 });
 
+// export const redis = new Redis({
+//   host: "localhost",
+//   port: 6379,
+// });
+
 export const redisSubscriber = redis.duplicate();
 redisSubscriber.on("error", (err: Error) => {
   console.error("Redis Client Error", err);
