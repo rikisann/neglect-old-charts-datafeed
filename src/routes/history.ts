@@ -27,6 +27,31 @@ router.get("/", async (req, res) => {
     to
   );
 
+  const previousTransactionsData = await redis.zrangebyscore(
+    `transactions:${address}`,
+    from - 1,
+    "-inf",
+    "LIMIT",
+    0,
+    1
+  );
+  let previousClosePrice: number | undefined;
+  if (previousTransactionsData.length > 0) {
+    const previousTransaction = JSON.parse(previousTransactionsData[0]);
+    if (
+      previousTransaction.tokenAmount > 0 &&
+      previousTransaction.totalUsd > 0
+    ) {
+      const tokenAmount = previousTransaction.tokenAmount / 10 ** 6;
+      previousClosePrice = previousTransaction.totalUsd / tokenAmount;
+    }
+  }
+
+  if (transactionsData.length === 0) {
+    res.json({ bars: [], noData: true });
+    return;
+  }
+
   const transactions = transactionsData.map((transaction) =>
     JSON.parse(transaction)
   );
@@ -67,14 +92,12 @@ router.get("/", async (req, res) => {
   barsArray.sort((a, b) => a.time - b.time);
   for (let i = 0; i < barsArray.length; i++) {
     if (i === 0) {
-      // For the first bar, 'open' can be the same as 'close' or an initial price
-      barsArray[i].open = 0;
+      barsArray[i].open = previousClosePrice || barsArray[i].low;
     } else {
-      // Set 'open' to the 'close' of the previous bar
       barsArray[i].open = barsArray[i - 1].close;
     }
   }
-  res.json(barsArray);
+  res.json({ bars: barsArray, noData: false });
 });
 
 export default router;
