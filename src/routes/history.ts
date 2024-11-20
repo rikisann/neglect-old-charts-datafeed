@@ -63,7 +63,9 @@ router.get("/", async (req, res) => {
     }
   });
 
-  res.json(Object.values(barsMap));
+  const barsArray = Object.values(barsMap);
+  barsArray.sort((a, b) => a.time - b.time);
+  res.json(barsArray);
 });
 
 export default router;
