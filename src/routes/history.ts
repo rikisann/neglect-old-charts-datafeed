@@ -8,6 +8,7 @@ router.get("/", async (req, res) => {
   const address = req.query.address as string;
   const from = parseInt(req.query.from as string, 10);
   const to = parseInt(req.query.to as string, 10);
+  const decimals = parseInt(req.query.decimals as string, 10) || 6;
   const resolutionParam = req.query.resolution as string;
 
   let resolutionMs: number;
@@ -42,7 +43,7 @@ router.get("/", async (req, res) => {
       previousTransaction.tokenAmount > 0 &&
       previousTransaction.totalUsd > 0
     ) {
-      const tokenAmount = previousTransaction.tokenAmount / 10 ** 6;
+      const tokenAmount = previousTransaction.tokenAmount / 10 ** decimals;
       previousClosePrice = previousTransaction.totalUsd / tokenAmount;
     }
   }
@@ -61,7 +62,7 @@ router.get("/", async (req, res) => {
     try {
       if (transaction.tokenAmount <= 0 || transaction.totalUsd <= 0) return;
 
-      const tokenAmount = transaction.tokenAmount / 10 ** 6;
+      const tokenAmount = transaction.tokenAmount / 10 ** decimals;
 
       const price = transaction.totalUsd / tokenAmount;
       const time = new Date(transaction.timestamp * 1000);
