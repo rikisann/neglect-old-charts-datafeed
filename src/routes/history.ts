@@ -65,6 +65,15 @@ router.get("/", async (req, res) => {
 
   const barsArray = Object.values(barsMap);
   barsArray.sort((a, b) => a.time - b.time);
+  for (let i = 0; i < barsArray.length; i++) {
+    if (i === 0) {
+      // For the first bar, 'open' can be the same as 'close' or an initial price
+      barsArray[i].open = 0;
+    } else {
+      // Set 'open' to the 'close' of the previous bar
+      barsArray[i].open = barsArray[i - 1].close;
+    }
+  }
   res.json(barsArray);
 });
 
