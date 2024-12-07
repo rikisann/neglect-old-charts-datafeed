@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { redis } from "../connection";
 import { Bar } from "../types/Bar";
+import { db } from "../db";
 
 const router = Router();
 
 router.get("/", async (req, res) => {
+
   const address = req.query.address as string;
   const from = parseInt(req.query.from as string, 10);
   const to = parseInt(req.query.to as string, 10);
@@ -22,40 +24,46 @@ router.get("/", async (req, res) => {
     resolutionMs = minutes * 60 * 1000;
   }
 
-  const transactionsData = await redis.zrangebyscore(
-    `transactions:${address}`,
-    from,
-    to
-  );
+  const transactions = await db.transaction.findMany({
+    where: {
+      tokenAddress: address,
+      timestamp: {
+        gte: new Date(from * 1000),
+        lte: new Date(to * 1000),
+      },
+    },
+    orderBy: {
+      timestamp: "asc",
+    },
+  });
 
-  const previousTransactionsData = await redis.zrangebyscore(
-    `transactions:${address}`,
-    from - 1,
-    "-inf",
-    "LIMIT",
-    0,
-    1
-  );
+  const previousTransactions = await db.transaction.findFirst({
+    where: {
+      tokenAddress: address,
+      timestamp: {
+        lt: new Date(from * 1000),
+      },
+    },
+    orderBy: {
+      timestamp: "desc",
+    },
+  });
+
   let previousClosePrice: number | undefined;
-  if (previousTransactionsData.length > 0) {
-    const previousTransaction = JSON.parse(previousTransactionsData[0]);
+  if (previousTransactions) {
     if (
-      previousTransaction.tokenAmount > 0 &&
-      previousTransaction.totalUsd > 0
+      previousTransactions.tokenAmount > 0 &&
+      previousTransactions.totalUsd > 0
     ) {
-      const tokenAmount = previousTransaction.tokenAmount / 10 ** decimals;
-      previousClosePrice = previousTransaction.totalUsd / tokenAmount;
+      const tokenAmount = previousTransactions.tokenAmount / 10 ** decimals;
+      previousClosePrice = previousTransactions.totalUsd / tokenAmount;
     }
   }
 
-  if (transactionsData.length === 0) {
+  if (transactions.length === 0) {
     res.json({ bars: [], noData: true });
     return;
   }
-
-  const transactions = transactionsData.map((transaction) =>
-    JSON.parse(transaction)
-  );
 
   const barsMap: { [key: number]: Bar } = {};
   transactions.forEach((transaction) => {
@@ -65,7 +73,7 @@ router.get("/", async (req, res) => {
       const tokenAmount = transaction.tokenAmount / 10 ** decimals;
 
       const price = transaction.totalUsd / tokenAmount;
-      const time = new Date(transaction.timestamp * 1000);
+      const time = new Date(transaction.timestamp);
       const bucket = Math.floor(time.getTime() / resolutionMs) * resolutionMs;
 
       if (!barsMap[bucket]) {
@@ -98,6 +106,7 @@ router.get("/", async (req, res) => {
       barsArray[i].open = barsArray[i - 1].close;
     }
   }
+
   res.json({ bars: barsArray, noData: false });
 });
 

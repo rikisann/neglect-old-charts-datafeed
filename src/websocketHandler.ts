@@ -16,7 +16,7 @@ const initializeRedisSubscriber = async () => {
         volume: latestTransaction.totalUsd,
         address: tokenData.address,
         price: tokenData.price,
-        time: latestTransaction.timestamp,
+        time: new Date(latestTransaction.timestamp).getTime(),
       };
 
       // Get all clients subscribed to this token

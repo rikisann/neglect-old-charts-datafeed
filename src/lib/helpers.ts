@@ -1,6 +1,3 @@
-import { redis } from "../connection";
-import { Transaction } from "../types/Transaction";
-
 export const resolutionToSeconds = (resolution: string) => {
   const units = resolution.match(/[a-zA-Z]+/);
   const amount = resolution.match(/\d+/);
@@ -42,26 +39,6 @@ export const resolutionToSeconds = (resolution: string) => {
   return intAmount * multiplier;
 };
 
-export const getTransactionsBeforeTimestamp = async (
-  symbol: string,
-  timestamp: number,
-  limit: number
-): Promise<Transaction[]> => {
-  const transactionsData = await redis.zrevrangebyscore(
-    `transactions:${symbol}`,
-    timestamp - 1,
-    "-inf",
-    "LIMIT",
-    0,
-    limit
-  );
 
-  const transactions: Transaction[] = transactionsData.map((data: string) =>
-    JSON.parse(data)
-  );
 
-  // Since we fetched in reverse order, reverse the array to maintain chronological order
-  transactions.reverse();
 
-  return transactions;
-};

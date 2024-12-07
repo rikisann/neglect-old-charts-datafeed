@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Holder {
+  id           Int    @id @default(autoincrement())
+  tokenAddress String
+  address      String
+  amount       Float
+  Token        Token  @relation(fields: [tokenAddress], references: [address], onDelete: Cascade)
+
+  @@unique([tokenAddress, address])
+}
+
+model Token {
+  address                     String        @id
+  name                        String?
+  symbol                      String?
+  price                       Float?
+  mcap                        Float?
+  website                     String?
+  baseVault                   String?
+  quoteVault                  String?
+  image                       String?
+  twitter                     String?
+  telegram                    String?
+  discord                     String?
+  marketAddress               String?
+  liquidity                   Float?
+  buys                        Int           @default(0)
+  sells                       Int           @default(0)
+  volume24h                   Float         @default(0)
+  top10HoldersPercentage      Float?
+  devHoldingsPercentage       Float?
+  latestCtoTimestamp          DateTime?
+  isSecondCtoOrder            Boolean       @default(false)
+  graduatedAt                 DateTime?     @default(now())
+  latestTokenProfileTimestamp DateTime?
+  isMigrating                 Boolean       @default(false)
+  isSecondTokenProfileOrder   Boolean       @default(false)
+  createdAt                   DateTime      @default(now())
+  devWallet                   String?
+  bondingCurve                String?
+  supply                      Float?
+  decimals                    Int?
+  Holder                      Holder[]
+  Transaction                 Transaction[]
+
+  @@index([createdAt])
+  @@index([isMigrating])
+}
+
+model Transaction {
+  id             Int             @id @default(autoincrement())
+  tokenAddress   String
+  type           TransactionType
+  tokenAmount    Float
+  lamportsAmount Float
+  signature      String
+  maker          String
+  totalUsd       Float
+  timestamp      DateTime        @default(now())
+  Token          Token           @relation(fields: [tokenAddress], references: [address], onDelete: Cascade)
+
+  @@index([timestamp])
+}
+
+model WatchedAddress {
+  address String @id
+}
+
+enum TransactionType {
+  buy
+  sell
+}
