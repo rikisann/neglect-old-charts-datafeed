@@ -2,17 +2,17 @@
 
 import fs from "fs";
 import cors from "cors";
-import { createServer } from "http";
+import { createServer } from "https";
 import express from "express";
 import historyRouter from "./routes/history";
 import { initializeWebSocket } from "./websocketHandler";
 const app = express();
-const port = 3001;
+const port = 443;
 const server = createServer(
-  // {
-  //   key: fs.readFileSync("./ssl/chart_solindex_xyz.key"),
-  //   cert: fs.readFileSync("./ssl/chart_solindex_xyz.crt"),
-  // },
+  {
+    key: fs.readFileSync("./ssl/chart_solindex_xyz.key"),
+    cert: fs.readFileSync("./ssl/chart_solindex_xyz.crt"),
+  },
   app
 );
 

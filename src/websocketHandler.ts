@@ -11,6 +11,8 @@ const initializeRedisSubscriber = async () => {
   redisSubscriber.on("message", (channel, message) => {
     if (channel === "newSwap") {
       const tokenData = JSON.parse(message);
+      if (!tokenData.transaction) return
+
       const latestTransaction = tokenData.transaction;
       const swap = {
         volume: latestTransaction.totalUsd,
