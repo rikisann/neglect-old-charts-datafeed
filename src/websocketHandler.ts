@@ -6,31 +6,29 @@ const clients = new Map<WebSocket, Set<string>>();
 const subscriptionMap = new Map<string, Set<WebSocket>>();
 
 const initializeRedisSubscriber = async () => {
-  await redisSubscriber.subscribe("newSwap");
+  await redisSubscriber.psubscribe("newSwap:*");
 
-  redisSubscriber.on("message", (channel, message) => {
-    if (channel === "newSwap") {
-      const tokenData = JSON.parse(message);
-      if (!tokenData.transaction) return
+  redisSubscriber.on("pmessage", (_, channel, message) => {
+    const tokenData = JSON.parse(message);
+    if (!tokenData.transaction) return
 
-      const latestTransaction = tokenData.transaction;
-      const swap = {
-        volume: latestTransaction.totalUsd,
-        address: tokenData.address,
-        price: tokenData.price,
-        time: new Date(latestTransaction.timestamp).getTime(),
-      };
+    const latestTransaction = tokenData.transaction;
+    const swap = {
+      volume: latestTransaction.totalUsd,
+      address: tokenData.address,
+      price: tokenData.price,
+      time: new Date(latestTransaction.timestamp).getTime(),
+    };
 
-      // Get all clients subscribed to this token
-      const subscribers = subscriptionMap.get(tokenData.address);
+    // Get all clients subscribed to this token
+    const subscribers = subscriptionMap.get(tokenData.address);
 
-      if (subscribers) {
-        subscribers.forEach((ws) => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(swap));
-          }
-        });
-      }
+    if (subscribers) {
+      subscribers.forEach((ws) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(swap));
+        }
+      });
     }
   });
 };
@@ -38,7 +36,6 @@ const initializeRedisSubscriber = async () => {
 export const initializeWebSocket = async (server: Server, port: number) => {
   try {
     const wss = new WebSocketServer({ server });
-
     wss.on("connection", (ws: WebSocket) => {
       console.log("Client connected");
       clients.set(ws, new Set());

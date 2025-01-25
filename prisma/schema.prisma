@@ -21,17 +21,20 @@ model Token {
   address                     String        @id
   name                        String?
   symbol                      String?
+  description                 String?
   price                       Float?
   mcap                        Float?
   website                     String?
   baseVault                   String?
   quoteVault                  String?
+  quoteVaultAmount            Float?
+  baseVaultAmount             Float?
   image                       String?
   twitter                     String?
+  holdersCount                Int           @default(0)
   telegram                    String?
   discord                     String?
-  marketAddress               String?
-  liquidity                   Float?
+  marketAddress               String?       @unique
   buys                        Int           @default(0)
   sells                       Int           @default(0)
   volume24h                   Float         @default(0)
@@ -48,11 +51,13 @@ model Token {
   bondingCurve                String?
   supply                      Float?
   decimals                    Int?
+  liquidity                   Float?
+  txns                        Int           @default(0)
   Holder                      Holder[]
   Transaction                 Transaction[]
 
-  @@index([createdAt])
-  @@index([isMigrating])
+  @@index([address])
+  @@index([graduatedAt])
 }
 
 model Transaction {
@@ -64,14 +69,10 @@ model Transaction {
   signature      String
   maker          String
   totalUsd       Float
-  timestamp      DateTime        @default(now())
+  timestamp      DateTime?       @default(now())
   Token          Token           @relation(fields: [tokenAddress], references: [address], onDelete: Cascade)
 
-  @@index([timestamp])
-}
-
-model WatchedAddress {
-  address String @id
+  @@index([tokenAddress, timestamp])
 }
 
 enum TransactionType {

@@ -6,7 +6,7 @@ import { db } from "../db";
 const router = Router();
 
 router.get("/", async (req, res) => {
-
+  console.log("History request received");
   const address = req.query.address as string;
   const from = parseInt(req.query.from as string, 10);
   const to = parseInt(req.query.to as string, 10);
@@ -24,6 +24,7 @@ router.get("/", async (req, res) => {
     resolutionMs = minutes * 60 * 1000;
   }
 
+  console.log("Fetching transactions for ", address, from, to, resolutionMs);
   const transactions = await db.transaction.findMany({
     where: {
       tokenAddress: address,
@@ -32,11 +33,18 @@ router.get("/", async (req, res) => {
         lte: new Date(to * 1000),
       },
     },
+    select: {
+      tokenAmount: true,
+      totalUsd: true,
+      timestamp: true,
+    },
     orderBy: {
       timestamp: "asc",
     },
   });
+  console.log("Fetched ", transactions.length, " transactions for ", address);
 
+  console.log("Fetching previous transactions for ", address, " ", new Date(from * 1000));
   const previousTransactions = await db.transaction.findFirst({
     where: {
       tokenAddress: address,
@@ -44,10 +52,15 @@ router.get("/", async (req, res) => {
         lt: new Date(from * 1000),
       },
     },
+    select: {
+      tokenAmount: true,
+      totalUsd: true,
+    },
     orderBy: {
       timestamp: "desc",
     },
   });
+  console.log("Fetched previous transactions for ", address);
 
   let previousClosePrice: number | undefined;
   if (previousTransactions) {
@@ -61,11 +74,13 @@ router.get("/", async (req, res) => {
   }
 
   if (transactions.length === 0) {
+    console.log("No transactions found for ", address);
     res.json({ bars: [], noData: true });
     return;
   }
 
   const barsMap: { [key: number]: Bar } = {};
+  console.log("Processing ", transactions.length, " transactions");
   transactions.forEach((transaction) => {
     try {
       if (transaction.tokenAmount <= 0 || transaction.totalUsd <= 0) return;
@@ -107,6 +122,7 @@ router.get("/", async (req, res) => {
     }
   }
 
+  console.log("Sending bars ", barsArray.length, " for ", address);
   res.json({ bars: barsArray, noData: false });
 });
 
