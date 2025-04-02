@@ -8,17 +8,19 @@ datasource db {
 }
 
 model Holder {
-  id           Int    @id @default(autoincrement())
-  tokenAddress String
-  address      String
-  amount       Float
-  Token        Token  @relation(fields: [tokenAddress], references: [address], onDelete: Cascade)
+  tokenAddress     String
+  address          String
+  amount           Float
+  percentage_owned Float
+  lastUpdated      DateTime?
+  Token            Token     @relation(fields: [tokenAddress], references: [address], onDelete: Cascade)
 
-  @@unique([tokenAddress, address])
+  @@id([tokenAddress, address])
+  @@index([tokenAddress, percentage_owned(sort: Desc)])
 }
 
 model Token {
-  address                     String        @id
+  address                     String    @id @unique
   name                        String?
   symbol                      String?
   description                 String?
@@ -27,55 +29,60 @@ model Token {
   website                     String?
   baseVault                   String?
   quoteVault                  String?
-  quoteVaultAmount            Float?
-  baseVaultAmount             Float?
   image                       String?
   twitter                     String?
-  holdersCount                Int           @default(0)
+  holdersCount                Int       @default(0)
   telegram                    String?
   discord                     String?
-  marketAddress               String?       @unique
-  buys                        Int           @default(0)
-  sells                       Int           @default(0)
-  volume24h                   Float         @default(0)
+  marketAddress               String?   @unique
+  buys                        Int       @default(0)
+  sells                       Int       @default(0)
   top10HoldersPercentage      Float?
   devHoldingsPercentage       Float?
   latestCtoTimestamp          DateTime?
-  isSecondCtoOrder            Boolean       @default(false)
-  graduatedAt                 DateTime?     @default(now())
+  graduatedAt                 DateTime? @default(now())
   latestTokenProfileTimestamp DateTime?
-  isMigrating                 Boolean       @default(false)
-  isSecondTokenProfileOrder   Boolean       @default(false)
-  createdAt                   DateTime      @default(now())
+  isMigrating                 Boolean   @default(true)
+  createdAt                   DateTime  @default(now())
   devWallet                   String?
   bondingCurve                String?
   supply                      Float?
   decimals                    Int?
   liquidity                   Float?
-  txns                        Int           @default(0)
+  txns                        Int       @default(0)
+  volume                      Float     @default(0)
   Holder                      Holder[]
-  Transaction                 Transaction[]
+  Swap                        Swap[]
 
   @@index([address])
-  @@index([graduatedAt])
+  @@index([graduatedAt(sort: Desc)])
+  @@index([mcap, graduatedAt(sort: Desc)])
+  @@index([isMigrating])
+  @@index([price, graduatedAt(sort: Desc)])
+  @@index([volume, graduatedAt(sort: Desc)])
 }
 
-model Transaction {
-  id             Int             @id @default(autoincrement())
-  tokenAddress   String
-  type           TransactionType
-  tokenAmount    Float
-  lamportsAmount Float
-  signature      String
-  maker          String
-  totalUsd       Float
-  timestamp      DateTime?       @default(now())
-  Token          Token           @relation(fields: [tokenAddress], references: [address], onDelete: Cascade)
+model Swap {
+  id               String    @id
+  tokenAddress     String
+  swapType         SwapType
+  tokenAmount      Float
+  solAmount        Float
+  signature        String
+  maker            String
+  baseVaultAmount  Float
+  quoteVaultAmount Float
+  liquidity        Float
+  totalUsd         Float
+  price            Float
+  mcap             Float
+  timestamp        DateTime? @default(now())
+  Token            Token     @relation(fields: [tokenAddress], references: [address], onDelete: Cascade)
 
   @@index([tokenAddress, timestamp])
 }
 
-enum TransactionType {
+enum SwapType {
   buy
   sell
 }

@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { redis } from "../connection";
 import { Bar } from "../types/Bar";
 import { db } from "../db";
 
@@ -10,7 +9,6 @@ router.get("/", async (req, res) => {
   const address = req.query.address as string;
   const from = parseInt(req.query.from as string, 10);
   const to = parseInt(req.query.to as string, 10);
-  const decimals = parseInt(req.query.decimals as string, 10) || 6;
   const resolutionParam = req.query.resolution as string;
 
   let resolutionMs: number;
@@ -25,7 +23,7 @@ router.get("/", async (req, res) => {
   }
 
   console.log("Fetching transactions for ", address, from, to, resolutionMs);
-  const transactions = await db.transaction.findMany({
+  const transactions = await db.swap.findMany({
     where: {
       tokenAddress: address,
       timestamp: {
@@ -34,8 +32,9 @@ router.get("/", async (req, res) => {
       },
     },
     select: {
-      tokenAmount: true,
       totalUsd: true,
+      tokenAmount: true,
+      price: true,
       timestamp: true,
     },
     orderBy: {
@@ -45,7 +44,7 @@ router.get("/", async (req, res) => {
   console.log("Fetched ", transactions.length, " transactions for ", address);
 
   console.log("Fetching previous transactions for ", address, " ", new Date(from * 1000));
-  const previousTransactions = await db.transaction.findFirst({
+  const previousTransactions = await db.swap.findFirst({
     where: {
       tokenAddress: address,
       timestamp: {
@@ -55,6 +54,7 @@ router.get("/", async (req, res) => {
     select: {
       tokenAmount: true,
       totalUsd: true,
+      price: true,
     },
     orderBy: {
       timestamp: "desc",
@@ -65,29 +65,31 @@ router.get("/", async (req, res) => {
   let previousClosePrice: number | undefined;
   if (previousTransactions) {
     if (
-      previousTransactions.tokenAmount > 0 &&
-      previousTransactions.totalUsd > 0
+      previousTransactions.tokenAmount > 1
     ) {
-      const tokenAmount = previousTransactions.tokenAmount / 10 ** decimals;
-      previousClosePrice = previousTransactions.totalUsd / tokenAmount;
+      previousClosePrice = previousTransactions.price;
     }
   }
 
   if (transactions.length === 0) {
     console.log("No transactions found for ", address);
-    res.json({ bars: [], noData: true });
-    return;
+
+    if (!previousTransactions) {
+      res.json({ bars: [], noData: true });
+      return;
+    } else {
+      res.json({ bars: [], noData: false });
+      return;
+    }
   }
 
   const barsMap: { [key: number]: Bar } = {};
   console.log("Processing ", transactions.length, " transactions");
   transactions.forEach((transaction) => {
     try {
-      if (transaction.tokenAmount <= 0 || transaction.totalUsd <= 0) return;
+      if (transaction.tokenAmount <= 1) return;
 
-      const tokenAmount = transaction.tokenAmount / 10 ** decimals;
-
-      const price = transaction.totalUsd / tokenAmount;
+      const price = transaction.price;
       const time = new Date(transaction.timestamp);
       const bucket = Math.floor(time.getTime() / resolutionMs) * resolutionMs;
 

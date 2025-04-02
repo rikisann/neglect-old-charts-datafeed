@@ -10,15 +10,14 @@ const initializeRedisSubscriber = async () => {
 
   redisSubscriber.on("pmessage", (_, channel, message) => {
     const tokenData = JSON.parse(message);
-    if (!tokenData.transaction) return
+    if (!tokenData.swaps || tokenData.swaps.length === 0) return;
 
-    const latestTransaction = tokenData.transaction;
-    const swap = {
-      volume: latestTransaction.totalUsd,
+    const swaps = tokenData.swaps.map((swap: any) => ({
+      volume: swap.totalUsd,
       address: tokenData.address,
       price: tokenData.price,
-      time: new Date(latestTransaction.timestamp).getTime(),
-    };
+      time: new Date(swap.timestamp).getTime(),
+    }));
 
     // Get all clients subscribed to this token
     const subscribers = subscriptionMap.get(tokenData.address);
@@ -26,7 +25,9 @@ const initializeRedisSubscriber = async () => {
     if (subscribers) {
       subscribers.forEach((ws) => {
         if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify(swap));
+          for (const swap of swaps) {
+            ws.send(JSON.stringify(swap));
+          }
         }
       });
     }
