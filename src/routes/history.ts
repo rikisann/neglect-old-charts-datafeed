@@ -10,6 +10,7 @@ router.get("/", async (req, res) => {
   const from = parseInt(req.query.from as string, 10);
   const to = parseInt(req.query.to as string, 10);
   const resolutionParam = req.query.resolution as string;
+  const countBack = req.query.countBack ? parseInt(req.query.countBack as string, 10) : null;
 
   let resolutionMs: number;
   if (resolutionParam.endsWith("S") || resolutionParam.endsWith("s")) {
@@ -22,13 +23,16 @@ router.get("/", async (req, res) => {
     resolutionMs = minutes * 60 * 1000;
   }
 
-  console.log("Fetching transactions for ", address, from, to, resolutionMs);
-  const transactions = await db.swap.findMany({
+  console.log("Fetching transactions for ", address, from, to, resolutionMs, countBack);
+  let transactions = await db.swap.findMany({
     where: {
       tokenAddress: address,
       timestamp: {
-        gte: new Date(from * 1000),
+        gte: countBack ? undefined : new Date(from * 1000),
         lte: new Date(to * 1000),
+      },
+      tokenAmount: {
+        gt: 1,
       },
     },
     select: {
@@ -37,58 +41,52 @@ router.get("/", async (req, res) => {
       price: true,
       timestamp: true,
     },
-    orderBy: {
-      timestamp: "asc",
-    },
+    // orderBy: {
+    //   timestamp: "asc",
+    // },
+    take: countBack ? countBack : undefined,
   });
+
   console.log("Fetched ", transactions.length, " transactions for ", address);
 
-  console.log("Fetching previous transactions for ", address, " ", new Date(from * 1000));
-  const previousTransactions = await db.swap.findFirst({
-    where: {
-      tokenAddress: address,
-      timestamp: {
-        lt: new Date(from * 1000),
-      },
-    },
-    select: {
-      tokenAmount: true,
-      totalUsd: true,
-      price: true,
-    },
-    orderBy: {
-      timestamp: "desc",
-    },
-  });
-  console.log("Fetched previous transactions for ", address);
-
-  let previousClosePrice: number | undefined;
-  if (previousTransactions) {
-    if (
-      previousTransactions.tokenAmount > 1
-    ) {
-      previousClosePrice = previousTransactions.price;
-    }
-  }
+  // transactions = countBack ? transactions.reverse() : transactions;
 
   if (transactions.length === 0) {
     console.log("No transactions found for ", address);
-
-    if (!previousTransactions) {
-      res.json({ bars: [], noData: true });
-      return;
-    } else {
-      res.json({ bars: [], noData: false });
-      return;
-    }
+    res.json({ bars: [], noData: true });
+    return
   }
+
+  // console.log("Fetching previous transactions for ", address, " ", new Date(from * 1000));
+  // const previousTransactions = await db.swap.findFirst({
+  //   where: {
+  //     tokenAddress: address,
+  //     timestamp: {
+  //       lt: new Date(from * 1000),
+  //     },
+  //     tokenAmount: {
+  //       gt: 1,
+  //     },
+  //   },
+  //   select: {
+  //     tokenAmount: true,
+  //     totalUsd: true,
+  //     price: true,
+  //   },
+  //   orderBy: {
+  //     timestamp: "desc",
+  //   },
+  // });
+  // console.log("Fetched previous transactions for ", address);
+
+  // let previousClosePrice = transactions[0].price;
+
+
 
   const barsMap: { [key: number]: Bar } = {};
   console.log("Processing ", transactions.length, " transactions");
   transactions.forEach((transaction) => {
     try {
-      if (transaction.tokenAmount <= 1) return;
-
       const price = transaction.price;
       const time = new Date(transaction.timestamp);
       const bucket = Math.floor(time.getTime() / resolutionMs) * resolutionMs;
@@ -118,14 +116,19 @@ router.get("/", async (req, res) => {
   barsArray.sort((a, b) => a.time - b.time);
   for (let i = 0; i < barsArray.length; i++) {
     if (i === 0) {
-      barsArray[i].open = previousClosePrice || barsArray[i].low;
+      barsArray[i].open = barsArray[i].low;
     } else {
       barsArray[i].open = barsArray[i - 1].close;
     }
   }
 
   console.log("Sending bars ", barsArray.length, " for ", address);
-  res.json({ bars: barsArray, noData: false });
+
+  if (transactions.length < countBack) {
+    res.json({ bars: barsArray, noData: true });
+  } else {
+    res.json({ bars: barsArray, noData: false });
+  }
 });
 
 export default router;
