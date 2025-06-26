@@ -26,122 +26,194 @@ router.get("/", async (req, res) => {
 
   console.log("Fetching transactions for ", address, from, to, resolutionMs, countBack);
   const start = new Date();
-  // let transactions = await db.swap.findMany({
-  //   where: {
-  //     tokenAddress: address,
-  //     timestamp: {
-  //       gte: countBack ? undefined : new Date(from * 1000),
-  //       lte: new Date(to * 1000),
-  //     },
-  //     totalUsd: {
-  //       gt: 1,
-  //     },
-  //   },
-  //   select: {
-  //     totalUsd: true,
-  //     tokenAmount: true,
-  //     price: true,
-  //     timestamp: true,
 
-  //   },
-  //   orderBy: {
-  //     timestamp: "desc",
-  //   },
-  // });
+  // Batch processing function that maintains the same logic as the original
+  const fetchTransactionsInBatches = async (
+    tokenAddress: string,
+    toTimestamp: number,
+    fromTimestamp?: number,
+    targetBars?: number
+  ): Promise<{ bars: Bar[], hasMoreData: boolean }> => {
+    const barsMap: { [key: number]: Bar } = {};
+    let currentTimestamp = toTimestamp;
+    const batchSize = 5000; // Larger batch size
+    let batchCount = 0;
+    const maxBatches = 50; // Increased to allow more data fetching
+    let totalTransactionsProcessed = 0;
+    let shouldStop = false;
 
-  const query = `
-  SELECT 
-    "totalUsd", 
-    "tokenAmount", 
-    "price", 
-    "timestamp"
-  FROM "Swap"
-  WHERE 
-    "tokenAddress" = $1
-    AND "timestamp" <= TIMESTAMP 'epoch' + $2 * INTERVAL '1 second'
-    ${countBack ? '' : 'AND "timestamp" >= TIMESTAMP \'epoch\' + $3 * INTERVAL \'1 second\''}
-    AND "totalUsd" > 1
-  ORDER BY "timestamp" DESC
-`;
+    while (batchCount < maxBatches && !shouldStop) {
+      batchCount++;
 
-  const queryParams = countBack
-    ? [address, to]
-    : [address, to, from];
+      // Build query for this batch - same as original
+      const query = `
+        SELECT 
+          "totalUsd", 
+          "tokenAmount", 
+          "price", 
+          "timestamp"
+        FROM "Swap"
+        WHERE 
+          "tokenAddress" = $1
+          AND "timestamp" <= TIMESTAMP 'epoch' + $2 * INTERVAL '1 second'
+          ${fromTimestamp ? 'AND "timestamp" >= TIMESTAMP \'epoch\' + $3 * INTERVAL \'1 second\'' : ''}
+          AND "totalUsd" > 1
+        ORDER BY "timestamp" DESC
+        LIMIT ${batchSize}
+      `;
 
-  const transactions = await db.$queryRawUnsafe(query, ...queryParams) as Swap[];
+      const queryParams = fromTimestamp 
+        ? [tokenAddress, currentTimestamp, fromTimestamp]
+        : [tokenAddress, currentTimestamp];
 
-
-  console.log("Fetched ", transactions.length, " transactions for ", address, "in", new Date().getTime() - start.getTime(), "ms");
-
-  if (transactions.length === 0) {
-    console.log("No transactions found for ", address);
-    res.json({ bars: [], noData: true });
-    return
-  }
-
-  const barsMap: { [key: number]: Bar } = {};
-
-  for (const transaction of transactions) {
-    try {
-      const price = transaction.price;
-      const time = new Date(transaction.timestamp);
-      const bucket = Math.floor(time.getTime() / resolutionMs) * resolutionMs;
-
-      if (!barsMap[bucket]) {
-        barsMap[bucket] = {
-          time: bucket,
-          open: price,
-          high: price,
-          low: price,
-          close: price,
-          volume: transaction.totalUsd,
-        };
-      } else {
-        const bar = barsMap[bucket];
-        bar.high = Math.max(bar.high, price);
-        bar.low = Math.min(bar.low, price);
-        bar.close = price;
-        bar.volume += transaction.totalUsd;
+      console.log(`Batch ${batchCount}: Fetching transactions before ${new Date(currentTimestamp * 1000).toISOString()}`);
+      
+      const batchTransactions = await db.$queryRawUnsafe(query, ...queryParams) as Swap[];
+      
+      if (batchTransactions.length === 0) {
+        console.log(`Batch ${batchCount}: No more transactions found`);
+        break;
       }
-    } catch (err) {
-      console.error("Error processing transaction:", err);
+
+      console.log(`Batch ${batchCount}: Processing ${batchTransactions.length} transactions`);
+      
+      // Process transactions in the SAME way as the original code
+      for (const transaction of batchTransactions) {
+        try {
+          const price = transaction.price;
+          const time = new Date(transaction.timestamp);
+          const bucket = Math.floor(time.getTime() / resolutionMs) * resolutionMs;
+
+          if (!barsMap[bucket]) {
+            barsMap[bucket] = {
+              time: bucket,
+              open: price,
+              high: price,
+              low: price,
+              close: price,
+              volume: transaction.totalUsd,
+            };
+          } else {
+            const bar = barsMap[bucket];
+            bar.high = Math.max(bar.high, price);
+            bar.low = Math.min(bar.low, price);
+            bar.close = price; // This maintains chronological order since we process DESC
+            bar.volume += transaction.totalUsd;
+          }
+
+          totalTransactionsProcessed++;
+
+          // Only stop early for countBack mode, not for time range mode
+          if (targetBars && Object.keys(barsMap).length >= targetBars) {
+            console.log(`Reached target of ${targetBars} bars after processing ${totalTransactionsProcessed} transactions`);
+            shouldStop = true;
+            break;
+          }
+        } catch (err) {
+          console.error("Error processing transaction:", err);
+        }
+      }
+
+      // Update timestamp for next batch if we haven't stopped
+      if (!shouldStop && batchTransactions.length > 0) {
+        const oldestTransaction = batchTransactions[batchTransactions.length - 1];
+        currentTimestamp = Math.floor(new Date(oldestTransaction.timestamp).getTime() / 1000) - 1;
+      }
+
+      // Check stopping conditions
+      const currentBarsCount = Object.keys(barsMap).length;
+      console.log(`Batch ${batchCount} complete: ${currentBarsCount} bars created from ${totalTransactionsProcessed} transactions`);
+
+      // For countBack mode: Stop if we have enough bars
+      if (targetBars && currentBarsCount >= targetBars) {
+        shouldStop = true;
+        break;
+      }
+
+      // For both modes: Stop if we got fewer transactions than requested (end of data)
+      if (batchTransactions.length < batchSize) {
+        console.log(`Got ${batchTransactions.length} transactions, less than batch size ${batchSize}. End of data.`);
+        shouldStop = true;
+        break;
+      }
+
+      // For time range mode: Stop if we hit the from timestamp limit
+      if (fromTimestamp && currentTimestamp <= fromTimestamp) {
+        console.log(`Reached from timestamp limit: ${new Date(fromTimestamp * 1000).toISOString()}`);
+        shouldStop = true;
+        break;
+      }
+
+      // Safety check: Don't fetch forever for countBack mode without fromTimestamp
+      if (!fromTimestamp && !targetBars && batchCount >= 20) {
+        console.log(`Safety limit reached: ${batchCount} batches processed`);
+        shouldStop = true;
+        break;
+      }
     }
 
-    if (countBack && Object.keys(barsMap).length >= countBack) {
-      break
+    // Convert bars to array and sort - SAME as original
+    const barsArray = Object.values(barsMap);
+    barsArray.sort((a, b) => a.time - b.time);
+
+    // Set open prices correctly - SAME as original
+    for (let i = 0; i < barsArray.length; i++) {
+      if (i === 0) {
+        barsArray[i].open = barsArray[i].low;
+      } else {
+        barsArray[i].open = barsArray[i - 1].close;
+      }
     }
-  }
 
-  // Convert to array and sort chronologically (oldest first)
-  let barsArray = Object.values(barsMap);
-  barsArray.sort((a, b) => a.time - b.time);
+    // Determine if there's more data
+    const hasMoreData = targetBars ? barsArray.length >= targetBars : false;
 
-  // Set open prices correctly
-  for (let i = 0; i < barsArray.length; i++) {
-    if (i === 0) {
-      barsArray[i].open = barsArray[i].low;
+    console.log(`Batch processing complete: ${batchCount} batches, ${totalTransactionsProcessed} transactions, ${barsArray.length} bars`);
+
+    return { bars: barsArray, hasMoreData };
+  };
+
+  try {
+    let result: { bars: Bar[], hasMoreData: boolean };
+
+    if (countBack) {
+      // For countBack mode, fetch until we have enough bars
+      result = await fetchTransactionsInBatches(address, to, undefined, countBack);
+      
+      // SAME slicing logic as original
+      if (result.bars.length > countBack) {
+        result.bars = result.bars.slice(result.bars.length - countBack);
+      }
     } else {
-      barsArray[i].open = barsArray[i - 1].close;
+      // For time range mode, fetch all bars in the range
+      result = await fetchTransactionsInBatches(address, to, from);
+      result.hasMoreData = false;
     }
+
+    console.log("Fetched and processed in", new Date().getTime() - start.getTime(), "ms");
+
+    if (result.bars.length === 0) {
+      console.log("No bars found for ", address);
+      res.json({ bars: [], noData: true });
+      return;
+    }
+
+    // SAME noData logic as original
+    const hasEnoughBars = countBack ? result.bars.length >= countBack : true;
+    const noMoreData = !hasEnoughBars;
+
+    console.log(`Sending ${result.bars.length} bars for ${address}`);
+    console.log(`Requested: ${countBack} bars, Has enough: ${hasEnoughBars}, No more data: ${noMoreData}\n`);
+
+    res.json({
+      bars: result.bars,
+      noData: noMoreData
+    });
+
+  } catch (error) {
+    console.error("Error in batch processing:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
-
-  // If countBack is specified, only return that many bars
-  if (countBack && barsArray.length > countBack) {
-    // Keep only the newest 'countBack' bars
-    barsArray = barsArray.slice(barsArray.length - countBack);
-  }
-
-  // Check if we have the requested number of bars
-  const hasEnoughBars = countBack ? barsArray.length >= countBack : true;
-  const noMoreData = !hasEnoughBars;
-
-  console.log(`Sending ${barsArray.length} bars for ${address}`);
-  console.log(`Requested: ${countBack} bars, Has enough: ${hasEnoughBars}, No more data: ${noMoreData}\n`);
-
-  res.json({
-    bars: barsArray,
-    noData: noMoreData
-  });
 });
 
 export default router;

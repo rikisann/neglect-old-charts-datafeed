@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "dist/server.js",
   "scripts": {
-    "start": "npm i && pm2 kill && npm run build && pm2 start dist/server.js && pm2 log",
+    "start": "npm i && pm2 kill && npm run build && pm2 start dist/src/server.js && pm2 log",
     "dev": "nodemon --quiet src/server.ts",
     "build": "tsc",
     "reload": "npm run build && npx pm2 reload all",
