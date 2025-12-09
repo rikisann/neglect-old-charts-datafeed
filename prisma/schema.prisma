@@ -51,15 +51,26 @@ model Token {
   liquidity                   Float?
   txns                        Int       @default(0)
   volume                      Float     @default(0)
+  isLiveStreaming             Boolean   @default(false)
+  streamNumParticipants       Int?
+  streamReplyCount            Int?
+  streamThumbnail             String?
+  hasLeverageOffers           Boolean   @default(false)
   Holder                      Holder[]
   Swap                        Swap[]
 
-  @@index([address])
   @@index([graduatedAt(sort: Desc)])
   @@index([mcap, graduatedAt(sort: Desc)])
   @@index([isMigrating])
   @@index([price, graduatedAt(sort: Desc)])
   @@index([volume, graduatedAt(sort: Desc)])
+  @@index([hasLeverageOffers])
+  @@index([holdersCount, graduatedAt(sort: Desc)])
+  @@index([isLiveStreaming, streamReplyCount(sort: Desc)])
+  @@index([name, mcap(sort: Desc)])
+  @@index([symbol, mcap(sort: Desc)])
+  @@index([top10HoldersPercentage, graduatedAt(sort: Desc)])
+  @@index([txns])
 }
 
 model Swap {
@@ -79,13 +90,43 @@ model Swap {
   timestamp        DateTime? @default(now())
   Token            Token     @relation(fields: [tokenAddress], references: [address], onDelete: Cascade)
 
-  @@index([tokenAddress, timestamp])
+  @@index([tokenAddress, timestamp(sort: Desc)])
+  @@index([tokenAddress, maker, timestamp(sort: Desc)])
+  @@index([tokenAddress, mcap(sort: Desc), timestamp(sort: Desc)])
+}
+
+model LeveragePosition {
+  id                           String    @id
+  collateralTokenAddress       String
+  quoteTokenAddress            String
+  initialBorrowQuote           String
+  initialMarginQuote           String
+  apr                          Int
+  initialPositionBase          String
+  closePositionQuote           String
+  offerAddress                 String
+  traderAddress                String
+  interestAccrued              Float
+  liquidationPrice             Float
+  offerCreatedAt               DateTime
+  entryPrice                   Float
+  positionLtv                  Float?
+  pnlInQuoteToken              Float
+  valueInQuoteToken            Float
+  lastInterestCollectTimestamp DateTime?
+  closeTimestamp               DateTime
+  openTimestamp                DateTime
+  collateralTokenDecimals      Int
+  collateralTokenSymbol        String
+  quoteTokenDecimals           Int
+  quoteTokenSymbol             String
+  status                       String
+  isActionable                 Boolean
+
+  @@index([traderAddress])
 }
 
 enum SwapType {
   buy
   sell
 }
-
-
-
